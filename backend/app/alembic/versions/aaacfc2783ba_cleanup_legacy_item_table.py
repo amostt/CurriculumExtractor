@@ -19,7 +19,8 @@ depends_on = None
 
 def upgrade():
     # Drop legacy item table (no longer used in the application)
-    op.drop_table('item')
+    # Use IF EXISTS to handle case where table was never created (e.g., fresh CI environment)
+    op.execute('DROP TABLE IF EXISTS item CASCADE')
 
 
 def downgrade():

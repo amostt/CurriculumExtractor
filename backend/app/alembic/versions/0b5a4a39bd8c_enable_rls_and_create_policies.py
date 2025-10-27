@@ -18,6 +18,19 @@ depends_on = None
 
 
 def upgrade():
+    # Check if auth schema exists (Supabase only, not in CI/testing)
+    # RLS policies require Supabase auth.uid() function
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'auth')"
+    ))
+    has_auth_schema = result.scalar()
+
+    if not has_auth_schema:
+        # Skip RLS setup in non-Supabase environments (CI, local testing)
+        print("⚠️  Skipping RLS policies - auth schema not found (non-Supabase environment)")
+        return
+
     # Enable Row-Level Security on user table
     op.execute('ALTER TABLE "user" ENABLE ROW LEVEL SECURITY')
 
@@ -78,6 +91,18 @@ def upgrade():
 
 
 def downgrade():
+    # Check if auth schema exists (Supabase only, not in CI/testing)
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'auth')"
+    ))
+    has_auth_schema = result.scalar()
+
+    if not has_auth_schema:
+        # Skip RLS teardown in non-Supabase environments
+        print("⚠️  Skipping RLS policy removal - auth schema not found (non-Supabase environment)")
+        return
+
     # Drop RLS policies for extractions table
     op.execute('DROP POLICY IF EXISTS "Users can delete own extractions" ON extractions')
     op.execute('DROP POLICY IF EXISTS "Users can update own extractions" ON extractions')
