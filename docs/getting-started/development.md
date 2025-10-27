@@ -649,6 +649,229 @@ docker compose exec backend alembic revision --autogenerate -m "Sync extraction 
 - ✅ Commit migration files to git
 - ❌ Don't edit applied migrations (create new ones)
 
+### Keeping Alembic Synchronized with Database
+
+**The Problem**: Database changes made outside Alembic (via MCP, Supabase Dashboard, or direct SQL) create a mismatch between database state and migration history.
+
+**The Solution**: Always create migrations for external changes and use `alembic stamp` to mark them as applied.
+
+#### Complete Synchronization Workflow
+
+**Step 1: Identify the Mismatch**
+
+Common error: `Can't locate revision identified by 'XXXXXX'`
+
+```bash
+# Check current Alembic version
+docker compose exec backend alembic current
+
+# Check database version
+mcp_supabase_execute_sql(
+    project_id="wijzypbstiigssjuiuvh",
+    query="SELECT version_num FROM alembic_version;"
+)
+
+# List local migration files
+ls backend/app/alembic/versions/
+```
+
+**Step 2: Inspect Database State**
+
+```python
+# List all tables
+mcp_supabase_list_tables(
+    project_id="wijzypbstiigssjuiuvh",
+    schemas=["public"]
+)
+
+# Check table structure
+mcp_supabase_execute_sql(
+    project_id="wijzypbstiigssjuiuvh",
+    query="""
+    SELECT column_name, data_type, is_nullable
+    FROM information_schema.columns
+    WHERE table_name = 'extractions'
+    ORDER BY ordinal_position;
+    """
+)
+
+# Check RLS policies
+mcp_supabase_execute_sql(
+    project_id="wijzypbstiigssjuiuvh",
+    query="""
+    SELECT schemaname, tablename, policyname, cmd, qual
+    FROM pg_policies
+    WHERE schemaname = 'public'
+    ORDER BY tablename, policyname;
+    """
+)
+```
+
+**Step 3: Reset to Valid Version**
+
+If database has unknown version, reset to latest known version:
+
+```python
+# Find latest valid migration from your codebase
+# Example: 1a31ce608336
+
+# Update database to this version
+mcp_supabase_execute_sql(
+    project_id="wijzypbstiigssjuiuvh",
+    query="UPDATE alembic_version SET version_num = '1a31ce608336';"
+)
+
+# Verify
+docker compose exec backend alembic current
+# Should now show: 1a31ce608336 (head)
+```
+
+**Step 4: Create Catchup Migrations**
+
+For each table/change that exists in database but not in migrations:
+
+```bash
+# Create migration matching current database state
+docker compose exec backend alembic revision -m "create extractions table"
+```
+
+Edit the migration file to match EXACTLY what's in the database:
+
+```python
+# backend/app/alembic/versions/XXXXX_create_extractions_table.py
+def upgrade():
+    # Copy exact schema from database inspection
+    op.create_table(
+        'extractions',
+        sa.Column('id', sa.UUID(), nullable=False),
+        sa.Column('owner_id', sa.UUID(), nullable=False),
+        # ... all other columns
+        sa.PrimaryKeyConstraint('id'),
+        sa.ForeignKeyConstraint(['owner_id'], ['user.id'], ondelete='CASCADE')
+    )
+
+    # Include indexes
+    op.create_index('ix_extractions_owner_id', 'extractions', ['owner_id'])
+
+def downgrade():
+    # Reverse operations
+    op.drop_index('ix_extractions_owner_id', 'extractions')
+    op.drop_table('extractions')
+```
+
+**Step 5: Mark Migration as Applied**
+
+Since the table/changes already exist in database:
+
+```bash
+# Get the new revision ID from the migration file (revision = 'XXXXX')
+docker compose exec backend alembic stamp XXXXX
+
+# Verify it's in the chain
+docker compose exec backend alembic history
+docker compose exec backend alembic current
+```
+
+**Step 6: Apply Any New Migrations**
+
+If you have new migrations after the catchup:
+
+```bash
+docker compose exec backend alembic upgrade head
+```
+
+**Step 7: Verify Everything**
+
+```bash
+# Check Alembic is at head
+docker compose exec backend alembic current
+
+# Verify database tables
+mcp_supabase_list_tables(project_id="wijzypbstiigssjuiuvh", schemas=["public"])
+
+# Check for security issues (missing RLS policies)
+mcp_supabase_get_advisors(project_id="wijzypbstiigssjuiuvh", type="security")
+
+# Rebuild backend with new migrations
+docker compose build backend
+docker compose up -d backend celery-worker
+
+# Test the services start cleanly
+docker compose logs backend --tail=20
+```
+
+**Step 8: Commit Migration Files**
+
+```bash
+git add backend/app/alembic/versions/
+git commit -m "chore(db): sync Alembic migrations with database state"
+git push
+```
+
+#### Common Scenarios
+
+**Scenario 1: Added table via MCP or Supabase Dashboard**
+
+1. Table exists in database, not in Alembic
+2. Create migration with `CREATE TABLE` statement matching database
+3. Use `alembic stamp` to mark as applied
+4. Commit migration file
+
+**Scenario 2: Enabled RLS directly in database**
+
+1. RLS and policies exist, no migration tracking them
+2. Create migration with `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` and `CREATE POLICY` statements
+3. Use `alembic stamp` to mark as applied
+4. Commit migration file
+
+**Scenario 3: Database version doesn't exist in codebase**
+
+1. Database has version `460746be37d1`, codebase doesn't have this file
+2. Reset database to latest known version: `UPDATE alembic_version SET version_num = 'latest_known'`
+3. Create catchup migrations for any missing tables/changes
+4. Use `alembic stamp` for each catchup migration
+5. Continue with normal workflow
+
+**Scenario 4: Multiple developers made conflicting migrations**
+
+1. Pull latest code with new migrations
+2. Check for parallel branches in `alembic history`
+3. If needed, create merge migration: `alembic merge -m "merge migration branches"`
+4. Apply with `alembic upgrade head`
+
+#### Troubleshooting
+
+**Error: `Can't locate revision identified by 'XXXXX'`**
+- Database has migration version that doesn't exist in codebase
+- Solution: Reset to known version (Step 3 above), create catchup migrations
+
+**Error: `Target database is not up to date`**
+- Database schema differs from migration expectations
+- Solution: Use MCP to inspect database, create migrations matching actual state
+
+**Error: Table already exists**
+- Migration tries to create table that already exists
+- Solution: Don't run `alembic upgrade`, use `alembic stamp` instead
+
+**Warning: Missing RLS policies**
+- After running migrations, `mcp_supabase_get_advisors` shows security issues
+- Solution: Create migration to add RLS policies, apply with `alembic stamp`
+
+**Multiple heads in migration history**
+- Conflicting migrations from different branches
+- Solution: `alembic merge heads -m "merge branches"`, then `alembic upgrade head`
+
+#### Prevention Best Practices
+
+1. **Always use Alembic for schema changes** when possible
+2. **If using MCP/Dashboard**, immediately create migration and stamp it
+3. **Check migration status** before starting work: `alembic current`
+4. **Verify security** after schema changes: `mcp_supabase_get_advisors(type="security")`
+5. **Rebuild Docker** after adding migrations: `docker compose build backend`
+6. **Test locally** before pushing migrations to remote
+7. **Document complex migrations** in commit messages
+8. **Use Context7** to research Alembic best practices when uncertain
+
 ---
 
 ## Adding API Endpoints
