@@ -18,7 +18,7 @@ depends_on = None
 
 
 def upgrade():
-    # Check if auth schema exists (Supabase only, not in CI/testing)
+    # Check if auth schema exists (Supabase only)
     # RLS policies require Supabase auth.uid() function
     conn = op.get_bind()
     result = conn.execute(sa.text(
@@ -27,9 +27,24 @@ def upgrade():
     has_auth_schema = result.scalar()
 
     if not has_auth_schema:
-        # Skip RLS setup in non-Supabase environments (CI, local testing)
-        print("⚠️  Skipping RLS policies - auth schema not found (non-Supabase environment)")
+        # This should ONLY happen in legacy non-Supabase environments
+        # CI should use Supabase local (see test-frontend.yml) to test RLS policies
+        print("━" * 80)
+        print("⚠️  WARNING: Skipping RLS policies - auth schema not found")
+        print("⚠️  RLS policies are NOT being applied to this database!")
+        print("")
+        print("If you're seeing this in CI:")
+        print("  - CI should use 'supabase start' for local Supabase instance")
+        print("  - See .github/workflows/test-frontend.yml for proper setup")
+        print("")
+        print("If you're in local development:")
+        print("  - Use 'supabase start' instead of plain PostgreSQL")
+        print("  - Or accept that RLS won't be tested locally")
+        print("━" * 80)
         return
+
+    # Auth schema found - enable RLS and create policies
+    print("✅ Supabase auth schema detected - enabling RLS policies")
 
     # Enable Row-Level Security on user table
     op.execute('ALTER TABLE "user" ENABLE ROW LEVEL SECURITY')
@@ -88,6 +103,9 @@ def upgrade():
         TO authenticated
         USING (owner_id = auth.uid())
     """)
+
+    print("✅ RLS enabled on user and extractions tables")
+    print("✅ Created 6 RLS policies (2 for user, 4 for extractions)")
 
 
 def downgrade():

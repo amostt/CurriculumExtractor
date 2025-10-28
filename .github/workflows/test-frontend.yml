@@ -45,24 +45,12 @@ jobs:
           path: frontend/coverage/
           retention-days: 7
 
-  # E2E tests with Playwright (requires full backend)
+  # E2E tests with Playwright (requires full backend + Supabase local)
   test-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
-      postgres:
-        image: postgres:17
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+      # Keep Redis for Celery
       redis:
         image: redis:7-alpine
         ports:
@@ -72,11 +60,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-      mailcatcher:
-        image: schickling/mailcatcher
-        ports:
-          - 1080:1080
-          - 1025:1025
     env:
       PROJECT_NAME: CurriculumExtractor
       ENVIRONMENT: testing
@@ -85,24 +68,38 @@ jobs:
       SECRET_KEY: test-secret-key-minimum-length-32-chars-for-jwt
       FIRST_SUPERUSER: admin@example.com
       FIRST_SUPERUSER_PASSWORD: test-password-123
-      DATABASE_URL: postgresql+psycopg://postgres:testpassword@localhost:5432/test
       REDIS_PASSWORD: test-redis-password
       REDIS_URL: redis://:test-redis-password@localhost:6379/0
       CELERY_BROKER_URL: redis://:test-redis-password@localhost:6379/0
       CELERY_RESULT_BACKEND: redis://:test-redis-password@localhost:6379/0
-      SUPABASE_URL: https://test.supabase.co
-      SUPABASE_ANON_KEY: test-anon-key
-      SUPABASE_SERVICE_KEY: test-service-key
-      SMTP_HOST: localhost
-      SMTP_PORT: "1025"
       SMTP_TLS: "false"
       EMAILS_FROM_EMAIL: noreply@test.example.com
       SENTRY_DSN: ""
-      
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        
+
+      # Install Supabase CLI for local development stack
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Start local Supabase (includes PostgreSQL + Auth + Storage + all services)
+      - name: Start Supabase local
+        run: supabase start
+
+      # Extract Supabase credentials from local instance
+      - name: Get Supabase credentials
+        id: supabase
+        run: |
+          echo "api_url=$(supabase status --output env | grep API_URL | cut -d '=' -f2)" >> $GITHUB_OUTPUT
+          echo "db_url=$(supabase status --output env | grep DB_URL | cut -d '=' -f2)" >> $GITHUB_OUTPUT
+          echo "anon_key=$(supabase status --output env | grep ANON_KEY | cut -d '=' -f2)" >> $GITHUB_OUTPUT
+          echo "service_key=$(supabase status --output env | grep SERVICE_ROLE_KEY | cut -d '=' -f2)" >> $GITHUB_OUTPUT
+          echo "inbucket_url=$(supabase status --output env | grep INBUCKET_URL | cut -d '=' -f2)" >> $GITHUB_OUTPUT
+
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
@@ -143,12 +140,24 @@ jobs:
           uv run alembic upgrade head
           uv run python app/initial_data.py
         working-directory: backend
+        env:
+          DATABASE_URL: ${{ steps.supabase.outputs.db_url }}
+          SUPABASE_URL: ${{ steps.supabase.outputs.api_url }}
+          SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_KEY: ${{ steps.supabase.outputs.service_key }}
 
       - name: Start backend API
         run: |
           nohup uv run fastapi run app/main.py --port 8000 > backend_server.log 2>&1 &
           echo $! > backend_server.pid
         working-directory: backend
+        env:
+          DATABASE_URL: ${{ steps.supabase.outputs.db_url }}
+          SUPABASE_URL: ${{ steps.supabase.outputs.api_url }}
+          SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          SUPABASE_SERVICE_KEY: ${{ steps.supabase.outputs.service_key }}
+          SMTP_HOST: localhost
+          SMTP_PORT: "54325"
 
       - name: Wait for backend
         run: |
@@ -165,7 +174,9 @@ jobs:
         env:
           CI: true
           VITE_API_URL: http://localhost:8000
-          MAILCATCHER_HOST: http://localhost:1080
+          VITE_SUPABASE_URL: ${{ steps.supabase.outputs.api_url }}
+          VITE_SUPABASE_ANON_KEY: ${{ steps.supabase.outputs.anon_key }}
+          MAILCATCHER_HOST: ${{ steps.supabase.outputs.inbucket_url }}
           FIRST_SUPERUSER: admin@example.com
           FIRST_SUPERUSER_PASSWORD: test-password-123
       
