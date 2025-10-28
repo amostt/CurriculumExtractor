@@ -90,12 +90,13 @@ jobs:
       - name: Start Supabase local
         run: supabase start
 
-      # Extract Supabase credentials from local instance (strip quotes)
+      # Extract Supabase credentials from local instance (strip quotes and fix DB URL driver)
       - name: Get Supabase credentials
         id: supabase
         run: |
           echo "api_url=$(supabase status --output env | grep API_URL | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
-          echo "db_url=$(supabase status --output env | grep DB_URL | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
+          # Transform postgresql:// to postgresql+psycopg:// for psycopg3 driver
+          echo "db_url=$(supabase status --output env | grep DB_URL | cut -d '=' -f2 | tr -d '"' | sed 's/postgresql:\/\//postgresql+psycopg:\/\//')" >> $GITHUB_OUTPUT
           echo "anon_key=$(supabase status --output env | grep ANON_KEY | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
           echo "service_key=$(supabase status --output env | grep SERVICE_ROLE_KEY | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
           echo "inbucket_url=$(supabase status --output env | grep INBUCKET_URL | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
