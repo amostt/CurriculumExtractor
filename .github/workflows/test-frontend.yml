@@ -90,15 +90,15 @@ jobs:
       - name: Start Supabase local
         run: supabase start
 
-      # Extract Supabase credentials from local instance
+      # Extract Supabase credentials from local instance (strip quotes)
       - name: Get Supabase credentials
         id: supabase
         run: |
-          echo "api_url=$(supabase status --output env | grep API_URL | cut -d '=' -f2)" >> $GITHUB_OUTPUT
-          echo "db_url=$(supabase status --output env | grep DB_URL | cut -d '=' -f2)" >> $GITHUB_OUTPUT
-          echo "anon_key=$(supabase status --output env | grep ANON_KEY | cut -d '=' -f2)" >> $GITHUB_OUTPUT
-          echo "service_key=$(supabase status --output env | grep SERVICE_ROLE_KEY | cut -d '=' -f2)" >> $GITHUB_OUTPUT
-          echo "inbucket_url=$(supabase status --output env | grep INBUCKET_URL | cut -d '=' -f2)" >> $GITHUB_OUTPUT
+          echo "api_url=$(supabase status --output env | grep API_URL | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
+          echo "db_url=$(supabase status --output env | grep DB_URL | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
+          echo "anon_key=$(supabase status --output env | grep ANON_KEY | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
+          echo "service_key=$(supabase status --output env | grep SERVICE_ROLE_KEY | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
+          echo "inbucket_url=$(supabase status --output env | grep INBUCKET_URL | cut -d '=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
 
       - name: Set up Python
         uses: actions/setup-python@v6
