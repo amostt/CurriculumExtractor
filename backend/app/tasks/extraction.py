@@ -61,9 +61,7 @@ def process_ocr_task(self: Any, ingestion_id: str) -> dict[str, Any]:
         RetryableError: Transient errors (after max retries exhausted)
         RateLimitError: Rate limit errors (after max retries exhausted)
     """
-    logger.info(
-        f"Starting OCR for {ingestion_id} (attempt {self.request.retries + 1})"
-    )
+    logger.info(f"Starting OCR for {ingestion_id} (attempt {self.request.retries + 1})")
 
     # Validate ingestion_id format
     try:
