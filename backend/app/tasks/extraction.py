@@ -15,7 +15,6 @@ from app.models import ExtractionStatus, Ingestion
 from app.services.ocr import (
     MistralOCRProvider,
     NonRetryableError,
-    OCRProviderError,
     RateLimitError,
     RetryableError,
 )

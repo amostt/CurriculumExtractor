@@ -12,8 +12,8 @@ from app.services.ocr import (
     BoundingBox,
     ContentBlock,
     OCRPageResult,
-    OCRProviderError,
     OCRResult,
+    RetryableError,
 )
 from app.tasks.extraction import process_ocr_task
 
@@ -179,17 +179,19 @@ class TestProcessOCRTask:
     @patch("app.tasks.extraction.get_db_context")
     @patch("app.tasks.extraction.download_from_storage")
     @patch("app.tasks.extraction.MistralOCRProvider")
-    @patch("app.tasks.extraction.process_ocr_task.retry")
     def test_process_ocr_task_retries_on_failure(
         self,
-        mock_retry,
         mock_provider_class,
         mock_download,
         mock_db_context,
         mock_settings,
         mock_ingestion,
     ):
-        """Test task retries on transient failures."""
+        """Test task raises RetryableError on transient failures.
+
+        Note: Actual retry logic is handled by Celery's autoretry_for mechanism.
+        This test verifies the error is raised correctly so autoretry_for can catch it.
+        """
         mock_settings.MISTRAL_API_KEY = "test-api-key"
 
         mock_db = MagicMock()
@@ -199,19 +201,14 @@ class TestProcessOCRTask:
         mock_download.return_value = b"%PDF-1.4 content"
 
         mock_provider = AsyncMock()
-        mock_provider.extract_text.side_effect = OCRProviderError("Rate limit exceeded")
+        mock_provider.extract_text.side_effect = RetryableError(
+            "Server error: 500", status_code=500
+        )
         mock_provider_class.return_value = mock_provider
 
-        mock_retry.side_effect = Retry()
-
-        with pytest.raises(Retry):
+        # RetryableError should be raised (will be caught by autoretry_for in production)
+        with pytest.raises(RetryableError):
             process_ocr_task(str(mock_ingestion.id))
-
-        # Verify retry was called with exponential backoff
-        mock_retry.assert_called_once()
-        call_kwargs = mock_retry.call_args[1]
-        assert "countdown" in call_kwargs
-        assert call_kwargs["max_retries"] == 3
 
     @patch("app.tasks.extraction.get_db_context")
     @patch("app.tasks.extraction.download_from_storage")
