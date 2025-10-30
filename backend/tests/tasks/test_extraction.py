@@ -147,7 +147,7 @@ class TestProcessOCRTask:
     @patch("app.tasks.extraction.get_db_context")
     @patch("app.tasks.extraction.download_from_storage")
     @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_ocr_provider_error(
+    def test_process_ocr_task_unexpected_error(
         self,
         mock_provider_class,
         mock_download,
@@ -155,7 +155,7 @@ class TestProcessOCRTask:
         mock_settings,
         mock_ingestion,
     ):
-        """Test task handles OCR provider errors."""
+        """Test task handles unexpected errors by updating status to FAILED."""
         mock_settings.MISTRAL_API_KEY = "test-api-key"
 
         mock_db = MagicMock()
@@ -165,10 +165,11 @@ class TestProcessOCRTask:
         mock_download.return_value = b"%PDF-1.4 content"
 
         mock_provider = AsyncMock()
-        mock_provider.extract_text.side_effect = OCRProviderError("API error")
+        # Simulate unexpected error (not one of our custom error types)
+        mock_provider.extract_text.side_effect = ValueError("Unexpected error")
         mock_provider_class.return_value = mock_provider
 
-        with pytest.raises(OCRProviderError, match="API error"):
+        with pytest.raises(ValueError, match="Unexpected error"):
             process_ocr_task(str(mock_ingestion.id))
 
         # Verify status was updated to FAILED
