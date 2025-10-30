@@ -71,7 +71,7 @@ export const Body_login_login_access_tokenSchema = {
 
 export const ExtractionStatusSchema = {
     type: 'string',
-    enum: ['UPLOADED', 'OCR_PROCESSING', 'OCR_COMPLETE', 'SEGMENTATION_PROCESSING', 'SEGMENTATION_COMPLETE', 'TAGGING_PROCESSING', 'DRAFT', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'FAILED'],
+    enum: ['UPLOADED', 'OCR_IN_PROGRESS', 'OCR_COMPLETE', 'OCR_FAILED', 'SEGMENTATION_PROCESSING', 'SEGMENTATION_COMPLETE', 'TAGGING_PROCESSING', 'DRAFT', 'IN_REVIEW', 'APPROVED', 'REJECTED', 'FAILED'],
     title: 'ExtractionStatus',
     description: 'Extraction pipeline status enum.'
 } as const;

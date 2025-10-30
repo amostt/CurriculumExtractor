@@ -6,7 +6,7 @@ Currently supports Mistral AI's Vision OCR API.
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, Field
@@ -61,6 +61,20 @@ class BoundingBox(BaseModel):
     height: float = Field(..., description="Height of the bounding box")
 
 
+class TableStructure(BaseModel):
+    """Table layout extracted by Mistral OCR.
+
+    Represents the structure of a table including dimensions and cell contents.
+    """
+
+    rows: int = Field(..., description="Number of rows in the table", gt=0)
+    columns: int = Field(..., description="Number of columns in the table", gt=0)
+    cells: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Cell data with row, col, text, and bbox information",
+    )
+
+
 class ContentBlock(BaseModel):
     """A content block extracted from a PDF page.
 
@@ -68,15 +82,14 @@ class ContentBlock(BaseModel):
     """
 
     block_id: str = Field(..., description="Unique identifier for this content block")
-    block_type: str = Field(
-        ...,
-        description="Type of content: text, equation, table, image, header, paragraph, list",
-    )
+    block_type: Literal[
+        "text", "header", "paragraph", "list", "table", "equation", "image"
+    ] = Field(..., description="Type of content block")
     text: str = Field(..., description="Extracted text content")
     bbox: BoundingBox = Field(..., description="Bounding box coordinates")
     confidence: float = Field(..., ge=0.0, le=1.0, description="OCR confidence score")
     latex: str | None = Field(None, description="LaTeX representation for equations")
-    table_structure: dict[str, Any] | None = Field(
+    table_structure: TableStructure | None = Field(
         None, description="Table structure metadata (rows, columns, cells)"
     )
     image_description: str | None = Field(
@@ -153,7 +166,9 @@ class MistralOCRProvider:
             timeout=httpx.Timeout(60.0),
         )
 
-    def _map_block_type(self, mistral_type: str) -> str:
+    def _map_block_type(
+        self, mistral_type: str
+    ) -> Literal["text", "header", "paragraph", "list", "table", "equation", "image"]:
         """Map Mistral's block type to semantic types for segmentation.
 
         Args:
@@ -162,7 +177,12 @@ class MistralOCRProvider:
         Returns:
             Semantic block type (e.g., "header", "paragraph")
         """
-        mapping = {
+        mapping: dict[
+            str,
+            Literal[
+                "text", "header", "paragraph", "list", "table", "equation", "image"
+            ],
+        ] = {
             "heading": "header",
             "text": "paragraph",
             "equation": "equation",
@@ -281,6 +301,15 @@ class MistralOCRProvider:
 
                     # If no type provided, default to "text" (fallback/unknown type)
                     # If type is provided, map to semantic type
+                    block_type: Literal[
+                        "text",
+                        "header",
+                        "paragraph",
+                        "list",
+                        "table",
+                        "equation",
+                        "image",
+                    ]
                     if mistral_type is None:
                         block_type = "text"  # Default fallback
                     else:
@@ -322,11 +351,11 @@ class MistralOCRProvider:
                         ),
                         confidence=0.95,
                         latex=None,
-                        table_structure={
-                            "rows": table_data.get("rows"),
-                            "columns": table_data.get("columns"),
-                            "cells": table_data.get("cells", []),
-                        },
+                        table_structure=TableStructure(
+                            rows=table_data.get("rows", 0),
+                            columns=table_data.get("columns", 0),
+                            cells=table_data.get("cells", []),
+                        ),
                         image_description=None,
                         markdown_content=None,
                         hierarchy_level=None,
