@@ -51,22 +51,53 @@ def upgrade():
         WHERE status = 'OCR_PROCESSING'
     """)
 
-    # Convert status column to use ENUM type
+    # Step 1: Drop the existing default value
+    op.execute("""
+        ALTER TABLE ingestions
+        ALTER COLUMN status DROP DEFAULT
+    """)
+
+    # Step 2: Convert status column to use ENUM type
     op.execute("""
         ALTER TABLE ingestions
         ALTER COLUMN status TYPE extractionstatus
         USING status::text::extractionstatus
     """)
 
+    # Step 3: Re-add the default value as ENUM type
+    op.execute("""
+        ALTER TABLE ingestions
+        ALTER COLUMN status SET DEFAULT 'UPLOADED'::extractionstatus
+    """)
+
 
 def downgrade():
     """Convert status column back to VARCHAR."""
-    # Convert status column back to VARCHAR
+    # Step 1: Drop the ENUM default
+    op.execute("""
+        ALTER TABLE ingestions
+        ALTER COLUMN status DROP DEFAULT
+    """)
+
+    # Step 2: Convert status column back to VARCHAR
     op.execute("""
         ALTER TABLE ingestions
         ALTER COLUMN status TYPE VARCHAR
         USING status::text
     """)
 
-    # Drop the ENUM type
+    # Step 3: Re-add the VARCHAR default
+    op.execute("""
+        ALTER TABLE ingestions
+        ALTER COLUMN status SET DEFAULT 'UPLOADED'
+    """)
+
+    # Step 4: Drop the ENUM type
     op.execute("DROP TYPE extractionstatus")
+
+    # Step 5: Revert OCR_IN_PROGRESS back to OCR_PROCESSING if any exist
+    op.execute("""
+        UPDATE ingestions
+        SET status = 'OCR_PROCESSING'
+        WHERE status = 'OCR_IN_PROGRESS'
+    """)
