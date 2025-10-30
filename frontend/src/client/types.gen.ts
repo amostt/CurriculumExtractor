@@ -19,7 +19,7 @@ export type Body_login_login_access_token = {
 /**
  * Extraction pipeline status enum.
  */
-export type ExtractionStatus = 'UPLOADED' | 'OCR_PROCESSING' | 'OCR_COMPLETE' | 'SEGMENTATION_PROCESSING' | 'SEGMENTATION_COMPLETE' | 'TAGGING_PROCESSING' | 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'FAILED';
+export type ExtractionStatus = 'UPLOADED' | 'OCR_IN_PROGRESS' | 'OCR_COMPLETE' | 'OCR_FAILED' | 'SEGMENTATION_PROCESSING' | 'SEGMENTATION_COMPLETE' | 'TAGGING_PROCESSING' | 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'REJECTED' | 'FAILED';
 
 export type HTTPValidationError = {
     detail?: Array<ValidationError>;
