@@ -166,7 +166,9 @@ class MistralOCRProvider:
             timeout=httpx.Timeout(60.0),
         )
 
-    def _map_block_type(self, mistral_type: str) -> str:
+    def _map_block_type(
+        self, mistral_type: str
+    ) -> Literal["text", "header", "paragraph", "list", "table", "equation", "image"]:
         """Map Mistral's block type to semantic types for segmentation.
 
         Args:
@@ -175,7 +177,12 @@ class MistralOCRProvider:
         Returns:
             Semantic block type (e.g., "header", "paragraph")
         """
-        mapping = {
+        mapping: dict[
+            str,
+            Literal[
+                "text", "header", "paragraph", "list", "table", "equation", "image"
+            ],
+        ] = {
             "heading": "header",
             "text": "paragraph",
             "equation": "equation",
@@ -294,6 +301,15 @@ class MistralOCRProvider:
 
                     # If no type provided, default to "text" (fallback/unknown type)
                     # If type is provided, map to semantic type
+                    block_type: Literal[
+                        "text",
+                        "header",
+                        "paragraph",
+                        "list",
+                        "table",
+                        "equation",
+                        "image",
+                    ]
                     if mistral_type is None:
                         block_type = "text"  # Default fallback
                     else:
@@ -335,11 +351,11 @@ class MistralOCRProvider:
                         ),
                         confidence=0.95,
                         latex=None,
-                        table_structure={
-                            "rows": table_data.get("rows"),
-                            "columns": table_data.get("columns"),
-                            "cells": table_data.get("cells", []),
-                        },
+                        table_structure=TableStructure(
+                            rows=table_data.get("rows", 0),
+                            columns=table_data.get("columns", 0),
+                            cells=table_data.get("cells", []),
+                        ),
                         image_description=None,
                         markdown_content=None,
                         hierarchy_level=None,
