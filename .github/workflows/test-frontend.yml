@@ -168,6 +168,19 @@ jobs:
           MAILCATCHER_HOST: http://localhost:1080
           FIRST_SUPERUSER: admin@example.com
           FIRST_SUPERUSER_PASSWORD: test-password-123
+
+      - name: Stop backend API
+        if: always()
+        run: |
+          if [ -f backend/backend_server.pid ]; then kill $(cat backend/backend_server.pid) || true; fi
+
+      - name: Upload backend server log
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-server-log
+          path: backend/backend_server.log
+          retention-days: 7
       
       - name: Merge Playwright blob report to HTML
         if: always()
