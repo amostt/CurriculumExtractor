@@ -204,7 +204,7 @@ class TestMistralOCRProvider:
             )
             assert table_block is not None
             assert table_block.table_structure is not None
-            assert table_block.table_structure["rows"] == 2
+            assert table_block.table_structure.rows == 2
 
     @pytest.mark.asyncio
     async def test_extract_text_api_error_400(self):
@@ -625,17 +625,17 @@ class TestSemanticBlockExtraction:
             # Verify table structure with cell-level detail
             table_struct = table_block.table_structure
             assert table_struct is not None
-            assert table_struct["rows"] == 4
-            assert table_struct["columns"] == 2
-            assert len(table_struct["cells"]) == 4
+            assert table_struct.rows == 4
+            assert table_struct.columns == 2
+            assert len(table_struct.cells) == 4
 
             # Verify cell data with row/column positions
-            cell_a = table_struct["cells"][0]
+            cell_a = table_struct.cells[0]
             assert cell_a["row"] == 0
             assert cell_a["col"] == 0
             assert cell_a["text"] == "A."
 
-            cell_b = table_struct["cells"][2]
+            cell_b = table_struct.cells[2]
             assert cell_b["row"] == 1
             assert cell_b["col"] == 0
             assert cell_b["text"] == "B."
