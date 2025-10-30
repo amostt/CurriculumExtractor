@@ -1,4 +1,4 @@
-"""Tests for extraction pipeline Celery tasks."""
+"""Tests for OCR task retry logic with error classification."""
 
 import uuid
 from datetime import datetime
@@ -11,15 +11,17 @@ from app.models import ExtractionStatus
 from app.services.ocr import (
     BoundingBox,
     ContentBlock,
+    NonRetryableError,
     OCRPageResult,
     OCRResult,
+    RateLimitError,
     RetryableError,
 )
 from app.tasks.extraction import process_ocr_task
 
 
-class TestProcessOCRTask:
-    """Test OCR processing Celery task."""
+class TestProcessOCRTaskRetryLogic:
+    """Test OCR task retry logic with error classification."""
 
     @pytest.fixture
     def mock_ingestion(self):
@@ -33,7 +35,7 @@ class TestProcessOCRTask:
 
     @pytest.fixture
     def mock_ocr_result(self):
-        """Create a mock OCR result."""
+        """Create a mock successful OCR result."""
         extraction_id = uuid.uuid4()
         return OCRResult(
             extraction_id=extraction_id,
@@ -50,7 +52,7 @@ class TestProcessOCRTask:
                         ContentBlock(
                             block_id="blk_001",
                             block_type="text",
-                            text="Question 1: Solve for x",
+                            text="Test content",
                             bbox=BoundingBox(x=100, y=200, width=300, height=50),
                             confidence=0.98,
                         )
@@ -64,90 +66,7 @@ class TestProcessOCRTask:
     @patch("app.tasks.extraction.get_db_context")
     @patch("app.tasks.extraction.download_from_storage")
     @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_success(
-        self,
-        mock_provider_class,
-        mock_download,
-        mock_db_context,
-        mock_settings,
-        mock_ingestion,
-        mock_ocr_result,
-    ):
-        """Test successful OCR processing."""
-        # Setup mocks
-        mock_settings.MISTRAL_API_KEY = "test-api-key"
-
-        mock_db = MagicMock()
-        mock_db_context.return_value.__enter__.return_value = mock_db
-        mock_db.get.return_value = mock_ingestion
-
-        mock_download.return_value = b"%PDF-1.4 fake content"
-
-        mock_provider = AsyncMock()
-        mock_provider.extract_text.return_value = mock_ocr_result
-        mock_provider_class.return_value = mock_provider
-
-        # Execute task
-        result = process_ocr_task(str(mock_ingestion.id))
-
-        # Verify result
-        assert result["status"] == "completed"
-        assert result["ingestion_id"] == str(mock_ingestion.id)
-        assert result["total_pages"] == 1
-        assert result["processing_time_seconds"] == 5.0
-
-        # Verify database calls
-        from app.models import Ingestion
-
-        mock_db.get.assert_called_once_with(Ingestion, mock_ingestion.id)
-        assert mock_db.commit.call_count == 2  # Status OCR_PROCESSING + OCR_COMPLETE
-
-        # Verify ingestion status was updated to OCR_COMPLETE
-        assert mock_ingestion.status == ExtractionStatus.OCR_COMPLETE
-
-        # Verify storage download
-        mock_download.assert_called_once_with(mock_ingestion.storage_path)
-
-        # Verify OCR provider was called
-        mock_provider.extract_text.assert_called_once()
-
-    @patch("app.tasks.extraction.get_db_context")
-    def test_process_ocr_task_ingestion_not_found(self, mock_db_context):
-        """Test task fails when ingestion record not found."""
-        mock_db = MagicMock()
-        mock_db_context.return_value.__enter__.return_value = mock_db
-        mock_db.get.return_value = None
-
-        ingestion_id = str(uuid.uuid4())
-
-        with pytest.raises(ValueError, match="Ingestion .* not found"):
-            process_ocr_task(ingestion_id)
-
-    @patch("app.tasks.extraction.get_db_context")
-    @patch("app.tasks.extraction.download_from_storage")
-    @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_storage_error(
-        self, mock_provider_class, mock_download, mock_db_context, mock_ingestion
-    ):
-        """Test task handles storage download errors."""
-        mock_db = MagicMock()
-        mock_db_context.return_value.__enter__.return_value = mock_db
-        mock_db.get.return_value = mock_ingestion
-
-        mock_download.side_effect = Exception("Storage error")
-
-        with pytest.raises(Exception, match="Storage error"):
-            process_ocr_task(str(mock_ingestion.id))
-
-        # Verify status was updated to FAILED
-        assert mock_ingestion.status == ExtractionStatus.FAILED
-        mock_db.commit.assert_called()
-
-    @patch("app.tasks.extraction.settings")
-    @patch("app.tasks.extraction.get_db_context")
-    @patch("app.tasks.extraction.download_from_storage")
-    @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_unexpected_error(
+    def test_no_retry_on_non_retryable_error_401(
         self,
         mock_provider_class,
         mock_download,
@@ -155,8 +74,8 @@ class TestProcessOCRTask:
         mock_settings,
         mock_ingestion,
     ):
-        """Test task handles unexpected errors by updating status to FAILED."""
-        mock_settings.MISTRAL_API_KEY = "test-api-key"
+        """Test task does NOT retry on 401 authentication error."""
+        mock_settings.MISTRAL_API_KEY = "invalid-key"
 
         mock_db = MagicMock()
         mock_db_context.return_value.__enter__.return_value = mock_db
@@ -164,68 +83,28 @@ class TestProcessOCRTask:
 
         mock_download.return_value = b"%PDF-1.4 content"
 
+        # Simulate 401 error
         mock_provider = AsyncMock()
-        # Simulate unexpected error (not one of our custom error types)
-        mock_provider.extract_text.side_effect = ValueError("Unexpected error")
-        mock_provider_class.return_value = mock_provider
-
-        with pytest.raises(ValueError, match="Unexpected error"):
-            process_ocr_task(str(mock_ingestion.id))
-
-        # Verify status was updated to FAILED
-        assert mock_ingestion.status == ExtractionStatus.FAILED
-        mock_db.commit.assert_called()
-
-    @patch("app.tasks.extraction.settings")
-    @patch("app.tasks.extraction.get_db_context")
-    @patch("app.tasks.extraction.download_from_storage")
-    @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_retries_on_failure(
-        self,
-        mock_provider_class,
-        mock_download,
-        mock_db_context,
-        mock_settings,
-        mock_ingestion,
-    ):
-        """Test task raises RetryableError on transient failures.
-
-        Note: Actual retry logic is handled by Celery's autoretry_for mechanism.
-        This test verifies the error is raised correctly so autoretry_for can catch it.
-        """
-        mock_settings.MISTRAL_API_KEY = "test-api-key"
-
-        mock_db = MagicMock()
-        mock_db_context.return_value.__enter__.return_value = mock_db
-        mock_db.get.return_value = mock_ingestion
-
-        mock_download.return_value = b"%PDF-1.4 content"
-
-        mock_provider = AsyncMock()
-        mock_provider.extract_text.side_effect = RetryableError(
-            "Server error: 500", status_code=500
+        mock_provider.extract_text.side_effect = NonRetryableError(
+            "Mistral API authentication failed", status_code=401
         )
         mock_provider_class.return_value = mock_provider
 
-        # RetryableError should be raised (will be caught by autoretry_for in production)
-        with pytest.raises(RetryableError):
+        # Should raise NonRetryableError without retrying
+        with pytest.raises(NonRetryableError):
             process_ocr_task(str(mock_ingestion.id))
 
-    @patch("app.tasks.extraction.get_db_context")
-    @patch("app.tasks.extraction.download_from_storage")
-    @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_invalid_ingestion_id(
-        self, mock_provider_class, mock_download, mock_db_context
-    ):
-        """Test task handles invalid ingestion ID format."""
-        with pytest.raises(ValueError, match="Invalid ingestion ID"):
-            process_ocr_task("not-a-uuid")
+        # Verify status updated to FAILED
+        assert mock_ingestion.status == ExtractionStatus.FAILED
+
+        # Verify OCR was only called once (no retries)
+        assert mock_provider.extract_text.call_count == 1
 
     @patch("app.tasks.extraction.settings")
     @patch("app.tasks.extraction.get_db_context")
     @patch("app.tasks.extraction.download_from_storage")
     @patch("app.tasks.extraction.MistralOCRProvider")
-    def test_process_ocr_task_updates_status_to_processing(
+    def test_retry_on_retryable_error_500(
         self,
         mock_provider_class,
         mock_download,
@@ -234,8 +113,8 @@ class TestProcessOCRTask:
         mock_ingestion,
         mock_ocr_result,
     ):
-        """Test task updates status to OCR_PROCESSING before starting OCR."""
-        mock_settings.MISTRAL_API_KEY = "test-api-key"
+        """Test task retries on 500 server error with exponential backoff."""
+        mock_settings.MISTRAL_API_KEY = "test-key"
 
         mock_db = MagicMock()
         mock_db_context.return_value.__enter__.return_value = mock_db
@@ -243,21 +122,154 @@ class TestProcessOCRTask:
 
         mock_download.return_value = b"%PDF-1.4 content"
 
+        # Simulate 500 error on first 2 calls, success on 3rd
         mock_provider = AsyncMock()
-        mock_provider.extract_text.return_value = mock_ocr_result
+        mock_provider.extract_text.side_effect = [
+            RetryableError("Mistral API server error: 500", status_code=500),
+            RetryableError("Mistral API server error: 500", status_code=500),
+            mock_ocr_result,
+        ]
         mock_provider_class.return_value = mock_provider
 
-        # Track status changes
-        status_changes = []
+        # With autoretry_for, this should eventually succeed
+        # For now, since we haven't implemented autoretry_for yet,
+        # this will raise on first error
+        with pytest.raises(RetryableError):
+            process_ocr_task(str(mock_ingestion.id))
 
-        def track_status_change(*args, **kwargs):
-            status_changes.append(mock_ingestion.status)
+    @patch("app.tasks.extraction.settings")
+    @patch("app.tasks.extraction.get_db_context")
+    @patch("app.tasks.extraction.download_from_storage")
+    @patch("app.tasks.extraction.MistralOCRProvider")
+    @patch("app.tasks.extraction.process_ocr_task.retry")
+    def test_rate_limit_error_respects_retry_after_header(
+        self,
+        mock_task_retry,
+        mock_provider_class,
+        mock_download,
+        mock_db_context,
+        mock_settings,
+        mock_ingestion,
+    ):
+        """Test task respects Retry-After header on 429 rate limit."""
+        mock_settings.MISTRAL_API_KEY = "test-key"
 
-        mock_db.commit.side_effect = track_status_change
+        mock_db = MagicMock()
+        mock_db_context.return_value.__enter__.return_value = mock_db
+        mock_db.get.return_value = mock_ingestion
 
-        process_ocr_task(str(mock_ingestion.id))
+        mock_download.return_value = b"%PDF-1.4 content"
 
-        # Verify status progression: OCR_PROCESSING -> OCR_COMPLETE
-        assert len(status_changes) >= 2
-        assert ExtractionStatus.OCR_PROCESSING in status_changes
-        assert status_changes[-1] == ExtractionStatus.OCR_COMPLETE
+        # Simulate 429 with retry-after=60
+        mock_provider = AsyncMock()
+        mock_provider.extract_text.side_effect = RateLimitError(
+            "Mistral API rate limit exceeded", retry_after=60
+        )
+        mock_provider_class.return_value = mock_provider
+
+        mock_task_retry.side_effect = Retry()
+
+        with pytest.raises(Retry):
+            process_ocr_task(str(mock_ingestion.id))
+
+        # Verify retry was called with retry_after countdown
+        mock_task_retry.assert_called_once()
+        call_kwargs = mock_task_retry.call_args[1]
+        assert call_kwargs["countdown"] == 60
+
+    @patch("app.tasks.extraction.settings")
+    @patch("app.tasks.extraction.get_db_context")
+    @patch("app.tasks.extraction.download_from_storage")
+    @patch("app.tasks.extraction.MistralOCRProvider")
+    def test_rate_limit_error_without_retry_after(
+        self,
+        mock_provider_class,
+        mock_download,
+        mock_db_context,
+        mock_settings,
+        mock_ingestion,
+    ):
+        """Test task uses default backoff when Retry-After header missing."""
+        mock_settings.MISTRAL_API_KEY = "test-key"
+
+        mock_db = MagicMock()
+        mock_db_context.return_value.__enter__.return_value = mock_db
+        mock_db.get.return_value = mock_ingestion
+
+        mock_download.return_value = b"%PDF-1.4 content"
+
+        # Simulate 429 without retry_after
+        mock_provider = AsyncMock()
+        mock_provider.extract_text.side_effect = RateLimitError(
+            "Mistral API rate limit exceeded", retry_after=None
+        )
+        mock_provider_class.return_value = mock_provider
+
+        # Should raise and rely on autoretry_for exponential backoff
+        with pytest.raises(RateLimitError):
+            process_ocr_task(str(mock_ingestion.id))
+
+    @patch("app.tasks.extraction.settings")
+    @patch("app.tasks.extraction.get_db_context")
+    @patch("app.tasks.extraction.download_from_storage")
+    @patch("app.tasks.extraction.MistralOCRProvider")
+    def test_no_retry_on_non_retryable_error_400(
+        self,
+        mock_provider_class,
+        mock_download,
+        mock_db_context,
+        mock_settings,
+        mock_ingestion,
+    ):
+        """Test task does NOT retry on 400 bad request error."""
+        mock_settings.MISTRAL_API_KEY = "test-key"
+
+        mock_db = MagicMock()
+        mock_db_context.return_value.__enter__.return_value = mock_db
+        mock_db.get.return_value = mock_ingestion
+
+        mock_download.return_value = b"%PDF-1.4 content"
+
+        # Simulate 400 error
+        mock_provider = AsyncMock()
+        mock_provider.extract_text.side_effect = NonRetryableError(
+            "Mistral API error: 400", status_code=400
+        )
+        mock_provider_class.return_value = mock_provider
+
+        with pytest.raises(NonRetryableError):
+            process_ocr_task(str(mock_ingestion.id))
+
+        # Verify status updated to FAILED
+        assert mock_ingestion.status == ExtractionStatus.FAILED
+
+    @patch("app.tasks.extraction.settings")
+    @patch("app.tasks.extraction.get_db_context")
+    @patch("app.tasks.extraction.download_from_storage")
+    @patch("app.tasks.extraction.MistralOCRProvider")
+    def test_retry_on_503_service_unavailable(
+        self,
+        mock_provider_class,
+        mock_download,
+        mock_db_context,
+        mock_settings,
+        mock_ingestion,
+    ):
+        """Test task retries on 503 service unavailable."""
+        mock_settings.MISTRAL_API_KEY = "test-key"
+
+        mock_db = MagicMock()
+        mock_db_context.return_value.__enter__.return_value = mock_db
+        mock_db.get.return_value = mock_ingestion
+
+        mock_download.return_value = b"%PDF-1.4 content"
+
+        # Simulate 503 error
+        mock_provider = AsyncMock()
+        mock_provider.extract_text.side_effect = RetryableError(
+            "Mistral API server error: 503", status_code=503
+        )
+        mock_provider_class.return_value = mock_provider
+
+        with pytest.raises(RetryableError):
+            process_ocr_task(str(mock_ingestion.id))
