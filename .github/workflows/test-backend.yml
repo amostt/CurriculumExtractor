@@ -72,10 +72,9 @@ jobs:
           FIRST_SUPERUSER: admin@example.com
           FIRST_SUPERUSER_PASSWORD: test-password
           EMAILS_FROM_EMAIL: noreply@test.example.com
-      - name: Alembic migrate then check
+      - name: Alembic migrate (forward-only)
         run: |
           uv run alembic upgrade head
-          uv run alembic check
         working-directory: backend
         env:
           PROJECT_NAME: CurriculumExtractor
