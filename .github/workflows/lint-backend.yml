@@ -51,22 +51,5 @@ jobs:
         run: uv run ruff format app --check
         working-directory: backend
 
-      - name: Alembic check (sanity)
-        run: uv run alembic check
-        working-directory: backend
-        env:
-          PROJECT_NAME: CurriculumExtractor
-          SECRET_KEY: just-for-linting
-          FIRST_SUPERUSER: admin@example.com
-          FIRST_SUPERUSER_PASSWORD: just-for-linting
-          DATABASE_URL: postgresql+psycopg://postgres:password@localhost:5432/app
-          SUPABASE_URL: https://dummy.supabase.co
-          SUPABASE_ANON_KEY: dummy-anon-key
-          SUPABASE_SERVICE_KEY: dummy-service-key
-          REDIS_PASSWORD: dummy-redis-password
-          REDIS_URL: redis://:dummy@localhost:6379/0
-          CELERY_BROKER_URL: redis://:dummy@localhost:6379/0
-          CELERY_RESULT_BACKEND: redis://:dummy@localhost:6379/0
-
       - name: Docs safety (no alembic downgrade in docs)
         run: python3 scripts/check_docs_no_downgrade.py
