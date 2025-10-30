@@ -47,6 +47,13 @@ repos:
         pass_filenames: false
         files: ^backend/app/alembic/versions/.*\.py$
 
+      - id: docs-no-downgrade
+        name: docs safety (no alembic downgrade in docs)
+        entry: python scripts/check_docs_no_downgrade.py
+        language: system
+        pass_filenames: false
+        files: ^docs/.*\.md$
+
 ci:
   autofix_commit_msg: 🎨 [pre-commit.ci] Auto format from pre-commit.com hooks
   autoupdate_commit_msg: ⬆ [pre-commit.ci] pre-commit autoupdate

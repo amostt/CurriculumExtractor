@@ -29,20 +29,20 @@
 2. Scroll to **"Connection string"** section
 3. Select tab: **"URI"**
 4. Toggle: **"Use connection pooling"** → **ON**
-5. Select mode: **"Transaction"** (important for IPv6 compatibility)
+5. Select mode: **"Session"** (recommended for persistent backends)
 6. Copy the connection string - it should look like:
    ```
-   postgresql://postgres.abcdefghijklmnop:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
+   postgresql://postgres.abcdefghijklmnop:[YOUR-PASSWORD]@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
    ```
    
    **⚠️ Important**: 
    - Replace `[YOUR-PASSWORD]` with the database password you chose in Step 1
-   - Keep `:6543` (pooler port) - **NOT** `:5432`
+  - Use `:5432` (Session Mode pooler port)
    - Keep the full `postgres.abcdefghijklmnop` format
 
 **Example**:
 ```
-postgresql://postgres.abcdefghijklmnop:MySecurePassword123!@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
+postgresql://postgres.abcdefghijklmnop:MySecurePassword123!@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
 ```
 
 ---
