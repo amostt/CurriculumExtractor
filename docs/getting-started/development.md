@@ -573,7 +573,7 @@ mcp_supabase_execute_sql(
     query="""
     SELECT column_name, data_type, is_nullable
     FROM information_schema.columns
-    WHERE table_name = 'users'
+    WHERE table_name = 'user'
     ORDER BY ordinal_position;
     """
 )
@@ -1079,11 +1079,11 @@ docker compose exec celery-worker celery -A app.worker purge
 # Generate migration
 docker compose exec backend alembic revision --autogenerate -m "Description"
 
-# Apply migrations
+# Apply migrations (forward-only)
 docker compose exec backend alembic upgrade head
 
-# Rollback one version
-docker compose exec backend alembic downgrade -1
+# Run migrations on demand (prestart one-shot job)
+docker compose run --rm prestart
 
 # Show current version
 docker compose exec backend alembic current
@@ -1099,7 +1099,7 @@ docker compose exec backend alembic history
 mcp_supabase_list_tables(project_id="wijzypbstiigssjuiuvh", schemas=["public"])
 
 # Execute query
-mcp_supabase_execute_sql(project_id="wijzypbstiigssjuiuvh", query="SELECT COUNT(*) FROM users;")
+mcp_supabase_execute_sql(project_id="wijzypbstiigssjuiuvh", query="SELECT COUNT(*) FROM \"user\";")
 
 # Apply migration
 mcp_supabase_apply_migration(project_id="wijzypbstiigssjuiuvh", name="migration_name", query="SQL")

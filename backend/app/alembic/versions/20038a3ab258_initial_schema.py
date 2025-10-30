@@ -80,14 +80,10 @@ def upgrade():
 def downgrade():
     """Downgrade from baseline migration.
 
-    Drops all tables in reverse order (respecting foreign key constraints).
+    WARNING: Downgrade is disabled to prevent accidental data loss.
+    If you need to reset the database, use Supabase Dashboard or manual SQL.
     """
-    # Drop ingestions first (has foreign key to user)
-    op.drop_index('ix_ingestions_ocr_processed_at', table_name='ingestions')
-    op.drop_index('ix_ingestions_status', table_name='ingestions')
-    op.drop_index('ix_ingestions_owner_id', table_name='ingestions')
-    op.drop_table('ingestions')
-
-    # Drop user table
-    op.drop_index('ix_user_email', table_name='user')
-    op.drop_table('user')
+    raise NotImplementedError(
+        "Downgrade is disabled for the baseline migration to prevent accidental data loss. "
+        "If you need to reset the database, please use the Supabase Dashboard or run manual SQL commands."
+    )

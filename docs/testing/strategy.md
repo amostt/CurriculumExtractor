@@ -576,7 +576,7 @@ Before committing migrations:
 - [ ] `alembic heads` shows single head
 - [ ] `alembic branches` shows no branching
 - [ ] Migration is idempotent (uses `IF NOT EXISTS` or equivalent)
-- [ ] Tested upgrade AND downgrade paths
+- [ ] Tested upgrade path (forward-only policy)
 - [ ] CI tests pass (full E2E with Supabase local)
 
 #### Debugging Migration Issues in CI
@@ -731,7 +731,7 @@ SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 20. **Rebase before migrations**: Always rebase on master before creating migrations
 21. **Check for conflicts**: Use `alembic heads` and `alembic branches` before committing
 22. **Make migrations idempotent**: Use `IF NOT EXISTS` for enums, tables, indexes
-23. **Test both directions**: Verify both `upgrade` and `downgrade` work
+23. **Forward-only**: Verify `upgrade` path; use corrective forward migrations instead of downgrades
 24. **Linear history**: Avoid merge migrations by preventing branching
 25. **CI catches conflicts**: GitHub Actions tests merge commits, exposing branching issues
 26. **Supabase local for E2E**: Tests RLS policies and auth flows, not just schema

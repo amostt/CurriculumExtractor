@@ -368,8 +368,9 @@ docker compose exec backend alembic upgrade head
 # Check current version
 docker compose exec backend alembic current
 
-# Rollback if needed
-docker compose exec backend alembic downgrade -1
+# Rollback guidance
+# Prefer Supabase backups/PITR to restore database state.
+# If schema adjustment is required, create a forward corrective migration.
 ```
 
 **Option 2: Via Supabase MCP (Hotfixes)**
@@ -641,8 +642,8 @@ docker compose down
 # 2. Restart previous version
 docker compose up -d --force-recreate
 
-# 3. Rollback database if needed
-docker compose exec backend alembic downgrade -1
+# 3. Restore database if needed
+# Use Supabase backups/PITR or apply a forward corrective migration
 
 # 4. Investigate
 docker compose logs backend --tail=100

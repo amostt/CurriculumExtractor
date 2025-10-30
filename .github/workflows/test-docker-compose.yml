@@ -47,9 +47,11 @@ jobs:
         uses: actions/checkout@v5
       - name: Create dummy .env file
         run: touch .env
+      - name: Validate docker compose config
+        run: docker compose config -q
       - name: Build all services
         run: docker compose build
       - name: Verify images were built
         run: |
-          docker images | grep curriculumextractor
+          docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "(backend|frontend)"
           echo "✅ All Docker images built successfully"

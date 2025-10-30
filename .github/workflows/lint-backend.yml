@@ -50,3 +50,6 @@ jobs:
       - name: Run ruff format check
         run: uv run ruff format app --check
         working-directory: backend
+
+      - name: Docs safety (no alembic downgrade in docs)
+        run: python3 scripts/check_docs_no_downgrade.py

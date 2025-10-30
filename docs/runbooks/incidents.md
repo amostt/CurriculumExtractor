@@ -346,8 +346,11 @@ docker compose exec db psql -U postgres -d app
 docker compose exec backend alembic current
 docker compose exec backend alembic history
 
-# Rollback migration
-docker compose exec backend alembic downgrade -1
+# Run migrations now (one-shot prestart)
+docker compose run --rm prestart
+
+# Restore database (staging/prod)
+# Use Supabase backups/PITR or create a forward corrective migration
 
 # Force rebuild
 docker compose build --no-cache
