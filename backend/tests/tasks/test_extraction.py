@@ -100,7 +100,7 @@ class TestProcessOCRTask:
         from app.models import Ingestion
 
         mock_db.get.assert_called_once_with(Ingestion, mock_ingestion.id)
-        assert mock_db.commit.call_count == 2  # Status OCR_PROCESSING + OCR_COMPLETE
+        assert mock_db.commit.call_count == 2  # Status OCR_IN_PROGRESS + OCR_COMPLETE
 
         # Verify ingestion status was updated to OCR_COMPLETE
         assert mock_ingestion.status == ExtractionStatus.OCR_COMPLETE
@@ -234,7 +234,7 @@ class TestProcessOCRTask:
         mock_ingestion,
         mock_ocr_result,
     ):
-        """Test task updates status to OCR_PROCESSING before starting OCR."""
+        """Test task updates status to OCR_IN_PROGRESS before starting OCR."""
         mock_settings.MISTRAL_API_KEY = "test-api-key"
 
         mock_db = MagicMock()
@@ -257,7 +257,7 @@ class TestProcessOCRTask:
 
         process_ocr_task(str(mock_ingestion.id))
 
-        # Verify status progression: OCR_PROCESSING -> OCR_COMPLETE
+        # Verify status progression: OCR_IN_PROGRESS -> OCR_COMPLETE
         assert len(status_changes) >= 2
-        assert ExtractionStatus.OCR_PROCESSING in status_changes
+        assert ExtractionStatus.OCR_IN_PROGRESS in status_changes
         assert status_changes[-1] == ExtractionStatus.OCR_COMPLETE

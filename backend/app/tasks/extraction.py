@@ -78,11 +78,11 @@ def process_ocr_task(self: Any, ingestion_id: str) -> dict[str, Any]:
                 logger.error(f"Ingestion {ingestion_id} not found in database")
                 raise ValueError(f"Ingestion {ingestion_id} not found")
 
-            # Update status to OCR_PROCESSING
-            ingestion.status = ExtractionStatus.OCR_PROCESSING
+            # Update status to OCR_IN_PROGRESS
+            ingestion.status = ExtractionStatus.OCR_IN_PROGRESS
             db.add(ingestion)
             db.commit()
-            logger.info(f"[{ingestion_id}] Status updated to OCR_PROCESSING")
+            logger.info(f"[{ingestion_id}] Status updated to OCR_IN_PROGRESS")
 
             # Download PDF from storage
             logger.info(
